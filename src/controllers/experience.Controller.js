@@ -1,6 +1,6 @@
-const Experience = require('../../models/portfolio-model/Experience.js');
+import Experience from "../models/Experience.model.js";
 
-exports.listExperience = async (req, res, next) => {
+export const listExperience = async (req, res, next) => {
   try {
     const items = await Experience.find({}).sort({ order: 1, createdAt: -1 });
     res.json(items);
@@ -9,7 +9,7 @@ exports.listExperience = async (req, res, next) => {
   }
 }
 
-exports.createExperience = async (req, res, next) => {
+export const createExperience = async (req, res, next) => {
   try {
     const { company, title, period, bullets = [], location, website, order = 0 } = req.body;
     if (!company || !title || !period) return res.status(400).json({ message: 'company, title, period required' });
@@ -25,7 +25,7 @@ exports.createExperience = async (req, res, next) => {
   }
 }
 
-exports.updateExperience = async (req, res, next) => {
+export const updateExperience = async (req, res, next) => {
   try {
     const { id } = req.params;
     const payload = req.body || {};
@@ -49,7 +49,7 @@ exports.updateExperience = async (req, res, next) => {
 };
 
 
-exports.getExperienceById = async (req, res, next) => {
+export const getExperienceById = async (req, res, next) => {
   try {
     const { id } = req.params;
     const doc = await Experience.findById(id);
@@ -59,5 +59,7 @@ exports.getExperienceById = async (req, res, next) => {
     next(err);
   }
 }
+
+export default { listExperience, createExperience, updateExperience, getExperienceById };
 
 

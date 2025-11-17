@@ -1,9 +1,10 @@
-const mongoose = require("mongoose");
-const Message = require('../../models/portfolio-model/Message.js');
+import mongoose from "mongoose";
+import Message from "../models/Message.model.js";
+import User from "../models/user.model.js";
 // import User from '../models/User.js';
 
 // List conversation previews for current user
-exports.listConversations = async (req, res, next) => {
+export const listConversations = async (req, res, next) => {
   try {
     const userId = req.user?.sub;
     if (!userId) return res.status(401).json({ message: 'Unauthorized' });
@@ -34,7 +35,7 @@ exports.listConversations = async (req, res, next) => {
 }
 
 // Messages between current user and peer
-exports.getMessages = async (req, res, next) => {
+export const getMessages = async (req, res, next) => {
   try {
     const userId = req.user?.sub;
     const peerId = req.params.userId;
@@ -57,7 +58,7 @@ exports.getMessages = async (req, res, next) => {
   }
 }
 
-exports.sendMessage = async (req, res, next) => {
+export const sendMessage = async (req, res, next) => {
   try {
     const userId = req.user?.sub;
     const { receiverId, message } = req.body;
@@ -79,7 +80,7 @@ exports.sendMessage = async (req, res, next) => {
 }
 
 // Anonymous sender → admin
-exports.sendAnonymousMessage = async (req, res, next) => {
+export const sendAnonymousMessage = async (req, res, next) => {
   try {
     const { name, message, visitorKey } = req.body || {};
     if (!message) return res.status(400).json({ message: 'message required' });
@@ -115,7 +116,7 @@ exports.sendAnonymousMessage = async (req, res, next) => {
 }
 
 // Anonymous history by visitorKey
-exports.getAnonymousMessages = async (req, res, next) => {
+export const getAnonymousMessages = async (req, res, next) => {
   try {
     const { visitorKey } = req.query;
     if (!visitorKey) return res.status(400).json({ message: 'visitorKey required' });
@@ -135,5 +136,7 @@ exports.getAnonymousMessages = async (req, res, next) => {
     next(err);
   }
 }
+
+export default { listConversations, getMessages, sendMessage, sendAnonymousMessage, getAnonymousMessages };
 
 

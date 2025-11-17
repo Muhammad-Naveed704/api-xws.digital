@@ -1,8 +1,8 @@
-const ContactMessage = require( "../../models/portfolio-model/ContactMessage.js");
-const nodemailer = require("nodemailer");
-const crypto = require("crypto");
+import ContactMessage from "../models/ContactMessage.model.js";
+import nodemailer from "nodemailer";
+import crypto from "crypto";
 
-exports.createMessage = async (req, res, next) => {
+export const createMessage = async (req, res, next) => {
   try {
     const { name, email, message } = req.body;
     if (!name || !email || !message) {
@@ -63,7 +63,7 @@ ${message}`,
   }
 }
 
-exports.listMessages = async (req, res, next) => {
+export const listMessages = async (req, res, next) => {
   try {
     const docs = await ContactMessage.find({})
       .sort({ createdAt: -1 })
@@ -73,3 +73,5 @@ exports.listMessages = async (req, res, next) => {
     next(err);
   }
 }
+
+export default { createMessage, listMessages };

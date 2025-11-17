@@ -1,12 +1,10 @@
-const express = require("express");
+import express from "express";
+import { createMessage, listMessages } from "../controllers/contact.Controller.js";
 const router = express.Router();
-const { createMessage, listMessages } = require('../../../../controllers/portfolio-controller/contactController.js');
-
-
 
 router.post('/create', createMessage);
 router.get('/get', listMessages);
 
-module.exports = router;
+export default router;
 
 

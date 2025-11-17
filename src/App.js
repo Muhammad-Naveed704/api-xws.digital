@@ -24,8 +24,15 @@ app.use(cookieParser());
 // routes import 
 
 import userRoutes from "./routes/user.routes.js";
+import chatRoute from "./routes/chat.routes.js";
+import contactRoutes from "./routes/contact.routes.js";
+import experenceRoutes from "./routes/experience.routes.js";
+import projectsRoutes from "./routes/projects.routes.js";
 
 // routes declaration
 app.use("/api/v1/users", userRoutes);
-
+app.use("/api/chat", chatRoute);
+app.use("/api/contact", contactRoutes);
+app.use("/api/experience", experenceRoutes);
+app.use("/api/projects", projectsRoutes);
 export { app };

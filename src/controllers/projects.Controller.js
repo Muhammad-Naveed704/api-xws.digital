@@ -1,6 +1,6 @@
-const Project = require('../../models/portfolio-model/Project.js');
+import Project from "../models/Project.model.js";
 
-exports.listProjects = async (req, res, next) => {
+export const listProjects = async (req, res, next) => {
   try {
     const { tag, featured } = req.query;
     const query = {};
@@ -13,7 +13,7 @@ exports.listProjects = async (req, res, next) => {
   }
 }
 
-exports.getProjectBySlug = async (req, res, next) => {
+export const getProjectBySlug = async (req, res, next) => {
   try {
     const { slug } = req.params;
     const project = await Project.findOne({ slug });
@@ -24,7 +24,7 @@ exports.getProjectBySlug = async (req, res, next) => {
   }
 }
 
-exports.createProject = async (req, res, next) => {
+export const createProject = async (req, res, next) => {
   try {
     // Destructure body fields
     let {
@@ -117,7 +117,7 @@ exports.createProject = async (req, res, next) => {
   }
 };
 
-exports.updateProject = async (req, res, next) => {
+export const updateProject = async (req, res, next) => {
   try {
     const { id } = req.params;
     const payload = { ...req.body };
@@ -173,5 +173,7 @@ exports.updateProject = async (req, res, next) => {
     next(err);
   }
 };
+
+export default { listProjects, getProjectBySlug, createProject, updateProject };
 
 
