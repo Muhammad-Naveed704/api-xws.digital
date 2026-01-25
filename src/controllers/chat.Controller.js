@@ -79,28 +79,57 @@ export const sendMessage = async (req, res, next) => {
   }
 }
 
-// Anonymous sender → admin
+// Anonymous sender → admin (support)
 export const sendAnonymousMessage = async (req, res, next) => {
   try {
     const { name, message, visitorKey } = req.body || {};
     if (!message) return res.status(400).json({ message: 'message required' });
 
-    // Pick admin as receiver
-    const admin = await User.findOne({ role: 'admin' }).lean();
-    if (!admin) return res.status(500).json({ message: 'No admin configured' });
+    // Pick admin as receiver (support) - fallback to first user if no admin
+    let admin = await User.findOne({ role: 'admin' }).lean();
+    if (!admin) {
+      // Fallback: use first user or create a support user
+      admin = await User.findOne().lean();
+      if (!admin) {
+        return res.status(500).json({ message: 'No users configured' });
+      }
+    }
 
     // Find or create guest user
     const key = String(visitorKey || new mongoose.Types.ObjectId().toString());
     const guestEmail = `guest:${key}@anon.local`;
     let guest = await User.findOne({ email: guestEmail });
     if (!guest) {
-      guest = await User.create({ name: name || 'Guest', email: guestEmail, passwordHash: 'guest', role: 'editor' });
+      // Create guest user - password will be hashed by pre-save hook
+      guest = await User.create({ 
+        name: name || 'Guest', 
+        email: guestEmail, 
+        password: 'guest', 
+        role: 'editor' 
+      });
     } else if (name && guest.name !== name) {
       guest.name = name;
       await guest.save();
     }
 
     const doc = await Message.create({ senderId: guest._id, receiverId: admin._id, message });
+    
+    // Update online users map with guest name
+    const onlineUsers = req.app.get('onlineUsers');
+    if (onlineUsers && guest._id) {
+      const existing = onlineUsers.get(String(guest._id));
+      if (existing) {
+        existing.name = guest.name;
+      } else {
+        onlineUsers.set(String(guest._id), {
+          userId: String(guest._id),
+          name: guest.name,
+          isOnline: true,
+          lastSeen: new Date().toISOString(),
+        });
+      }
+    }
+
     try {
       const io = req.app.get('io');
       if (io) {
@@ -109,7 +138,11 @@ export const sendAnonymousMessage = async (req, res, next) => {
       }
     } catch {}
 
-    res.status(201).json({ message: doc, guestUserId: String(guest._id), visitorKey: key });
+    // Return message with visitorKey for frontend to store
+    const response = doc.toObject ? doc.toObject() : doc;
+    response.visitorKey = key;
+    response.guestUserId = String(guest._id);
+    res.status(201).json(response);
   } catch (err) {
     next(err);
   }
@@ -122,9 +155,12 @@ export const getAnonymousMessages = async (req, res, next) => {
     if (!visitorKey) return res.status(400).json({ message: 'visitorKey required' });
     const guestEmail = `guest:${String(visitorKey)}@anon.local`;
     const guest = await User.findOne({ email: guestEmail }).lean();
-    if (!guest) return res.json([]);
-    const admin = await User.findOne({ role: 'admin' }).lean();
-    if (!admin) return res.json([]);
+    if (!guest) return res.json({ guestUserId: null, messages: [] });
+    let admin = await User.findOne({ role: 'admin' }).lean();
+    if (!admin) {
+      admin = await User.findOne().lean();
+      if (!admin) return res.json({ guestUserId: String(guest._id), messages: [] });
+    }
     const msgs = await Message.find({
       $or: [
         { senderId: guest._id, receiverId: admin._id },
@@ -137,6 +173,205 @@ export const getAnonymousMessages = async (req, res, next) => {
   }
 }
 
-export default { listConversations, getMessages, sendMessage, sendAnonymousMessage, getAnonymousMessages };
+// Initialize guest user
+export const initializeGuestUser = async (req, res, next) => {
+  try {
+    const { name, visitorKey } = req.body || {};
+    const key = String(visitorKey || new mongoose.Types.ObjectId().toString());
+    const guestEmail = `guest:${key}@anon.local`;
+    
+    let guest = await User.findOne({ email: guestEmail });
+    if (!guest) {
+      // Create guest user - password will be hashed by pre-save hook
+      guest = await User.create({ 
+        name: name || `User${Math.floor(Math.random() * 10000)}`, 
+        email: guestEmail, 
+        password: 'guest', 
+        role: 'editor' 
+      });
+    } else if (name && guest.name !== name) {
+      guest.name = name;
+      await guest.save();
+    }
+
+    // Update online users map
+    const onlineUsers = req.app.get('onlineUsers');
+    if (onlineUsers) {
+      onlineUsers.set(String(guest._id), {
+        userId: String(guest._id),
+        name: guest.name,
+        isOnline: true,
+        lastSeen: new Date().toISOString(),
+      });
+    }
+
+    res.json({ 
+      userId: String(guest._id), 
+      name: guest.name, 
+      visitorKey: key 
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Get online users
+export const getOnlineUsers = async (req, res, next) => {
+  try {
+    const { visitorKey } = req.query || {};
+    const onlineUsers = req.app.get('onlineUsers');
+    
+    if (!onlineUsers) {
+      return res.json([]);
+    }
+
+    // Get all online users from map
+    const users = Array.from(onlineUsers.values())
+      .filter(user => user.isOnline)
+      .map(user => ({
+        userId: user.userId,
+        name: user.name,
+        isOnline: user.isOnline,
+        lastSeen: user.lastSeen,
+      }));
+
+    // Also include guest users from database if visitorKey matches
+    if (visitorKey) {
+      const guestEmail = `guest:${visitorKey}@anon.local`;
+      const guest = await User.findOne({ email: guestEmail }).lean();
+      if (guest) {
+        const guestId = String(guest._id);
+        const exists = users.find(u => u.userId === guestId);
+        if (!exists) {
+          users.push({
+            userId: guestId,
+            name: guest.name,
+            isOnline: true,
+            lastSeen: new Date().toISOString(),
+          });
+        }
+      }
+    }
+
+    res.json(users);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Send guest-to-guest message
+export const sendGuestMessage = async (req, res, next) => {
+  try {
+    const { receiverId, message, visitorKey } = req.body || {};
+    if (!receiverId || !message) {
+      return res.status(400).json({ message: 'receiverId and message required' });
+    }
+
+    // Find sender guest user
+    const key = String(visitorKey || new mongoose.Types.ObjectId().toString());
+    const guestEmail = `guest:${key}@anon.local`;
+    let guest = await User.findOne({ email: guestEmail });
+    
+    if (!guest) {
+      // Create guest if doesn't exist - password will be hashed by pre-save hook
+      guest = await User.create({ 
+        name: `User${Math.floor(Math.random() * 10000)}`, 
+        email: guestEmail, 
+        password: 'guest', 
+        role: 'editor' 
+      });
+    }
+
+    // Verify receiver exists
+    const receiver = await User.findById(receiverId).lean();
+    if (!receiver) {
+      return res.status(404).json({ message: 'Receiver not found' });
+    }
+
+    const doc = await Message.create({ 
+      senderId: guest._id, 
+      receiverId: receiverId, 
+      message 
+    });
+
+    // Update online users
+    const onlineUsers = req.app.get('onlineUsers');
+    if (onlineUsers) {
+      const existing = onlineUsers.get(String(guest._id));
+      if (existing) {
+        existing.name = guest.name;
+      } else {
+        onlineUsers.set(String(guest._id), {
+          userId: String(guest._id),
+          name: guest.name,
+          isOnline: true,
+          lastSeen: new Date().toISOString(),
+        });
+      }
+    }
+
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`user:${String(guest._id)}`).emit('chat:message', doc);
+        io.to(`user:${receiverId}`).emit('chat:message', doc);
+      }
+    } catch {}
+
+    res.status(201).json(doc);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Get messages between guest and another user
+export const getGuestMessages = async (req, res, next) => {
+  try {
+    const { visitorKey } = req.query || {};
+    const peerId = req.params.userId;
+    
+    if (!visitorKey) {
+      return res.status(400).json({ message: 'visitorKey required' });
+    }
+
+    const guestEmail = `guest:${String(visitorKey)}@anon.local`;
+    const guest = await User.findOne({ email: guestEmail }).lean();
+    
+    if (!guest) {
+      return res.json([]);
+    }
+
+    const msgs = await Message.find({
+      $or: [
+        { senderId: guest._id, receiverId: peerId },
+        { senderId: peerId, receiverId: guest._id },
+      ],
+    })
+      .sort({ createdAt: 1 })
+      .limit(1000);
+
+    // Mark as read where peer sent to guest
+    await Message.updateMany(
+      { senderId: peerId, receiverId: guest._id, read: false },
+      { $set: { read: true } }
+    );
+
+    res.json(msgs);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export default { 
+  listConversations, 
+  getMessages, 
+  sendMessage, 
+  sendAnonymousMessage, 
+  getAnonymousMessages,
+  initializeGuestUser,
+  getOnlineUsers,
+  sendGuestMessage,
+  getGuestMessages,
+};
 
 

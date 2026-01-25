@@ -42,9 +42,9 @@ export const createMessage = async (req, res, next) => {
           to,
           subject: `New message from ${name}`,
           text: `From: ${name} <${email}>
-ID: ${doc._id}
----
-${message}`,
+          ID: ${doc._id}
+            ---
+          ${message}`,
         });
         const preview = nodemailer.getTestMessageUrl(info);
         res
