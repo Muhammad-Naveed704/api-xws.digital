@@ -6,7 +6,7 @@ import User from "../models/user.model.js";
 // List conversation previews for current user
 export const listConversations = async (req, res, next) => {
   try {
-    const userId = req.user?.sub;
+    const userId = req.user?._id || req.user?.sub;
     if (!userId) return res.status(401).json({ message: 'Unauthorized' });
 
     // Find latest message per peer
@@ -37,7 +37,7 @@ export const listConversations = async (req, res, next) => {
 // Messages between current user and peer
 export const getMessages = async (req, res, next) => {
   try {
-    const userId = req.user?.sub;
+    const userId = req.user?._id || req.user?.sub;
     const peerId = req.params.userId;
     if (!userId) return res.status(401).json({ message: 'Unauthorized' });
     const msgs = await Message.find({
@@ -60,7 +60,7 @@ export const getMessages = async (req, res, next) => {
 
 export const sendMessage = async (req, res, next) => {
   try {
-    const userId = req.user?.sub;
+    const userId = req.user?._id || req.user?.sub;
     const { receiverId, message } = req.body;
     if (!userId) return res.status(401).json({ message: 'Unauthorized' });
     if (!receiverId || !message) return res.status(400).json({ message: 'receiverId and message required' });
@@ -362,6 +362,137 @@ export const getGuestMessages = async (req, res, next) => {
   }
 }
 
+// Get all guest conversations for admin
+export const getAdminConversations = async (req, res, next) => {
+  try {
+    const userId = req.user?._id || req.user?.sub;
+    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+    
+    // Check if user is admin
+    const user = await User.findById(userId).lean();
+    if (!user || user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+
+    // Find all messages where admin is receiver or sender with guests
+    const me = new mongoose.Types.ObjectId(userId);
+    const guestEmails = await User.find({ email: /^guest:.*@anon\.local$/ }, { _id: 1, name: 1, email: 1 }).lean();
+    const guestIds = guestEmails.map(g => g._id);
+
+    if (guestIds.length === 0) {
+      return res.json([]);
+    }
+
+    // Get latest message per guest
+    const lastPerGuest = await Message.aggregate([
+      { 
+        $match: { 
+          $or: [
+            { senderId: me, receiverId: { $in: guestIds } },
+            { senderId: { $in: guestIds }, receiverId: me }
+          ]
+        } 
+      },
+      { 
+        $addFields: { 
+          peerId: { 
+            $cond: [ 
+              { $eq: ['$senderId', me] }, 
+              '$receiverId', 
+              '$senderId' 
+            ] 
+          } 
+        } 
+      },
+      { $sort: { createdAt: -1 } },
+      { 
+        $group: { 
+          _id: '$peerId', 
+          last: { $first: '$$ROOT' }, 
+          unread: { 
+            $sum: { 
+              $cond: [ 
+                { 
+                  $and: [ 
+                    { $ne: ['$senderId', me] }, 
+                    { $eq: ['$read', false] } 
+                  ] 
+                }, 
+                1, 
+                0 
+              ] 
+            } 
+          } 
+        } 
+      },
+      { $limit: 100 },
+    ]);
+
+    const peerIds = lastPerGuest.map((d) => d._id);
+    const users = await User.find({ _id: { $in: peerIds } }, { name: 1, email: 1 }).lean();
+    const usersMap = new Map(users.map((u) => [String(u._id), u]));
+
+    const data = lastPerGuest.map((d) => ({
+      peer: usersMap.get(String(d._id)),
+      lastMessage: d.last,
+      unread: d.unread,
+    }));
+
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Admin reply to guest
+export const adminReplyToGuest = async (req, res, next) => {
+  try {
+    const userId = req.user?._id || req.user?.sub;
+    const { guestId, message } = req.body;
+    
+    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+    if (!guestId || !message) {
+      return res.status(400).json({ message: 'guestId and message required' });
+    }
+
+    // Check if user is admin
+    const user = await User.findById(userId).lean();
+    if (!user || user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+
+    // Verify guest exists
+    const guest = await User.findById(guestId).lean();
+    if (!guest || !guest.email?.includes('@anon.local')) {
+      return res.status(404).json({ message: 'Guest not found' });
+    }
+
+    const doc = await Message.create({ 
+      senderId: userId, 
+      receiverId: guestId, 
+      message 
+    });
+
+    // Mark previous messages as read
+    await Message.updateMany(
+      { senderId: guestId, receiverId: userId, read: false },
+      { $set: { read: true } }
+    );
+
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`user:${String(userId)}`).emit('chat:message', doc);
+        io.to(`user:${String(guestId)}`).emit('chat:message', doc);
+      }
+    } catch {}
+
+    res.status(201).json(doc);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default { 
   listConversations, 
   getMessages, 
@@ -372,6 +503,8 @@ export default {
   getOnlineUsers,
   sendGuestMessage,
   getGuestMessages,
+  getAdminConversations,
+  adminReplyToGuest,
 };
 
 

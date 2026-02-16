@@ -1,4 +1,5 @@
 import express from "express";
+import { verifyJWT } from "../middlewares/auth.middleware.js";
 import { 
   getMessages, 
   listConversations, 
@@ -9,13 +10,19 @@ import {
   getOnlineUsers,
   sendGuestMessage,
   getGuestMessages,
+  getAdminConversations,
+  adminReplyToGuest,
 } from "../controllers/chat.Controller.js";
 const router = express.Router();
 
 // Authenticated routes
-router.get('/conversations', listConversations);
-router.get('/messages/:userId', getMessages);
-router.post('/messages', sendMessage);
+router.get('/conversations', verifyJWT, listConversations);
+router.get('/messages/:userId', verifyJWT, getMessages);
+router.post('/messages', verifyJWT, sendMessage);
+
+// Admin routes
+router.get('/admin/conversations', verifyJWT, getAdminConversations);
+router.post('/admin/reply', verifyJWT, adminReplyToGuest);
 
 // Anonymous/Support chat routes
 router.post('/anonymous/send', sendAnonymousMessage);
