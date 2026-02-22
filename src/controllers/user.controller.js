@@ -35,7 +35,7 @@ export const registerUser = asyncHandler(async (req, res) => {
     throw new ApiError(409, "user email already exists");
   }
 
-  const avatarLocalPath = req.files?.avatar[0]?.path;
+  const avatarLocalPath = req.files?.avatar?.[0]?.path;
   let coverImageLocalPath;
   if (
     req.files &&
@@ -45,22 +45,31 @@ export const registerUser = asyncHandler(async (req, res) => {
     coverImageLocalPath = req.files.coverImage[0]?.path;
   }
 
-  if (!avatarLocalPath) {
-    throw new ApiError(400, "Avatar is required");
+  // Make avatar optional - use default if not provided
+  let avatarUrl = null;
+  let coverImageUrl = null;
+  
+  if (avatarLocalPath) {
+    avatarUrl = await uploadOnCloudinary(avatarLocalPath);
+    if (!avatarUrl) {
+      throw new ApiError(500, "Failed to upload avatar");
+    }
   }
-  const avatarUrl = await uploadOnCloudinary(avatarLocalPath);
-  const coverImageUrl = await uploadOnCloudinary(coverImageLocalPath);
+  
+  if (coverImageLocalPath) {
+    coverImageUrl = await uploadOnCloudinary(coverImageLocalPath);
+  }
 
-  if (!avatarUrl) {
-    throw new ApiError(500, "Failed to upload avatar");
-  }
+  // Use default avatar if not provided
+  const defaultAvatar = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(name) + '&background=0ea5e9&color=fff';
 
   const user = await User.create({
     name,
     email,
     password,
-    avatar: avatarUrl?.url,
+    avatar: avatarUrl?.url || defaultAvatar,
     coverImage: coverImageUrl?.url || "",
+    role: 'user', // Default role - can be updated to admin later
   });
 
   const createdUser = await User.findById(user._id).select(

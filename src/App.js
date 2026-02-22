@@ -28,11 +28,14 @@ import chatRoute from "./routes/chat.routes.js";
 import contactRoutes from "./routes/contact.routes.js";
 import experenceRoutes from "./routes/experience.routes.js";
 import projectsRoutes from "./routes/projects.routes.js";
+import blogRoutes from "./routes/blog.routes.js";
 
 // routes declaration
 app.use("/api/v1/users", userRoutes);
+app.use("/api/auth", userRoutes); // Alias for auth routes
 app.use("/api/chat", chatRoute);
 app.use("/api/contact", contactRoutes);
 app.use("/api/experience", experenceRoutes);
 app.use("/api/projects", projectsRoutes);
+app.use("/api/blogs", blogRoutes);
 export { app };
